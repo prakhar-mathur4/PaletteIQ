@@ -46,20 +46,17 @@ To determine the single "representative" skin tone from the thousands of masked 
 - **Execution**: The algorithm groups the pixels into $K=3$ clusters based on Euclidean distance in the 3D RGB color space. It runs for a maximum of 20 iterations or until the centroids stop shifting significantly ($\Delta < 0.5$).
 - **Selection**: The cluster with the highest density (the most pixels assigned to it) is chosen as the dominant, representative skin tone.
 
-## Stage 5: Rule-Based Classification
+## Stage 5: Soft Clustering & Perceptual Color Interpolation
 
-Once the dominant RGB skin tone is identified, it is passed through a deterministic classification tree to map the user to 1 of 12 predefined color palettes.
+Rather than mapping the user into one of 12 rigid color palettes (a "Hard Clustering" approach), PaletteIQ V3 utilizes Soft Clustering to generate an infinite number of highly personalized palettes.
 
-The RGB value is converted to **HSL (Hue, Saturation, Lightness)** to extract meaningful semantic features:
+1. **Color Space Transformation**: The dominant RGB skin tone is converted into the **CIELAB ($L^*a^*b^*$) color space**. This space is perceptually uniform, meaning mathematical distances perfectly mimic human visual perception.
+2. **Anchor Distance Calculation**: The system calculates the Euclidean distance between the user's skin tone and 12 predefined "ideal" anchor tones (e.g., ideal Fair/Cool, ideal Deep/Warm).
+3. **Inverse Distance Weighting (IDW)**: The algorithm isolates the top 3 nearest anchors. It calculates a mathematical weight for each anchor inversely proportional to its squared distance (so the closest anchor has the strongest gravitational pull).
+4. **Color Blending**: The app iterates through the recommended colors (staples, accents, avoid) from the top 3 anchors and computes a weighted average of their coordinates directly in the $L^*a^*b^*$ color space. This prevents the colors from looking muddy or gray, which inevitably happens when blending purely in RGB.
+5. **Final Output**: The resulting blended $L^*a^*b^*$ coordinates are converted safely back into RGB Hex codes, producing a 1-in-a-billion palette completely unique to the user's exact dermal layer.
 
-1. **Depth (via Lightness)**:
-   - Evaluates the $L$ channel to place the user into 6 bins: *Fair, Light, Medium, Tan, Deep,* or *Rich*.
-2. **Undertone (via Hue & Saturation)**:
-   - **Warm**: Hue between $20^\circ-50^\circ$ and Saturation $> 0.25$.
-   - **Cool**: Hue between $340^\circ-360^\circ$ or $0^\circ-20^\circ$ and Saturation $> 0.20$.
-   - **Neutral**: If Saturation is $< 0.15$, the tone is classified as neutral (which defaults to the Warm palette in this application).
-
-The combination of the Depth and Undertone results in the final categorization key (e.g., `medium_warm` or `deep_cool`), which is then used to serve the curated wardrobe and accent colors.
+*(Note: The system still calculates the HSL-based Depth and Undertone purely to provide a helpful text description in the UI, but the generated palette hex codes are driven entirely by the continuous interpolation engine.)*
 
 ---
 
