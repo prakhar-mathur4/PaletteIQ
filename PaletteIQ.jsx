@@ -326,6 +326,157 @@ const rgbToHsl = (r, g, b) => {
   return { h: hue, s: saturation, l: lightness }
 }
 
+const rgbToXyz = (r, g, b) => {
+  let [rL, gL, bL] = [r / 255, g / 255, b / 255]
+  rL = rL > 0.04045 ? Math.pow((rL + 0.055) / 1.055, 2.4) : rL / 12.92
+  gL = gL > 0.04045 ? Math.pow((gL + 0.055) / 1.055, 2.4) : gL / 12.92
+  bL = bL > 0.04045 ? Math.pow((bL + 0.055) / 1.055, 2.4) : bL / 12.92
+  rL *= 100
+  gL *= 100
+  bL *= 100
+  const x = rL * 0.4124 + gL * 0.3576 + bL * 0.1805
+  const y = rL * 0.2126 + gL * 0.7152 + bL * 0.0722
+  const z = rL * 0.0193 + gL * 0.1192 + bL * 0.9505
+  return [x, y, z]
+}
+
+const xyzToLab = (x, y, z) => {
+  const refX = 95.047
+  const refY = 100.000
+  const refZ = 108.883
+  let [xR, yR, zR] = [x / refX, y / refY, z / refZ]
+  xR = xR > 0.008856 ? Math.pow(xR, 1 / 3) : (7.787 * xR) + (16 / 116)
+  yR = yR > 0.008856 ? Math.pow(yR, 1 / 3) : (7.787 * yR) + (16 / 116)
+  zR = zR > 0.008856 ? Math.pow(zR, 1 / 3) : (7.787 * zR) + (16 / 116)
+  const l = (116 * yR) - 16
+  const a = 500 * (xR - yR)
+  const b = 200 * (yR - zR)
+  return [l, a, b]
+}
+
+const rgbToLab = (r, g, b) => {
+  const [x, y, z] = rgbToXyz(r, g, b)
+  return xyzToLab(x, y, z)
+}
+
+const labToXyz = (l, a, b) => {
+  let y = (l + 16) / 116
+  let x = a / 500 + y
+  let z = y - b / 200
+  const y2 = Math.pow(y, 3)
+  const x2 = Math.pow(x, 3)
+  const z2 = Math.pow(z, 3)
+  y = y2 > 0.008856 ? y2 : (y - 16 / 116) / 7.787
+  x = x2 > 0.008856 ? x2 : (x - 16 / 116) / 7.787
+  z = z2 > 0.008856 ? z2 : (z - 16 / 116) / 7.787
+  const refX = 95.047
+  const refY = 100.000
+  const refZ = 108.883
+  return [x * refX, y * refY, z * refZ]
+}
+
+const xyzToRgb = (x, y, z) => {
+  let [xR, yR, zR] = [x / 100, y / 100, z / 100]
+  let r = xR * 3.2406 + yR * -1.5372 + zR * -0.4986
+  let g = xR * -0.9689 + yR * 1.8758 + zR * 0.0415
+  let b = xR * 0.0557 + yR * -0.2040 + zR * 1.0570
+  r = r > 0.0031308 ? 1.055 * Math.pow(r, 1 / 2.4) - 0.055 : 12.92 * r
+  g = g > 0.0031308 ? 1.055 * Math.pow(g, 1 / 2.4) - 0.055 : 12.92 * g
+  b = b > 0.0031308 ? 1.055 * Math.pow(b, 1 / 2.4) - 0.055 : 12.92 * b
+  return [
+    clamp(Math.round(r * 255), 0, 255),
+    clamp(Math.round(g * 255), 0, 255),
+    clamp(Math.round(b * 255), 0, 255)
+  ]
+}
+
+const labToRgb = (l, a, b) => {
+  const [x, y, z] = labToXyz(l, a, b)
+  return xyzToRgb(x, y, z)
+}
+
+const hexToRgb = (hex) => {
+  let h = hex.replace("#", "")
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("")
+  const num = parseInt(h, 16)
+  return [num >> 16, (num >> 8) & 255, num & 255]
+}
+
+const anchorTones = {
+  fair_cool: { rgb: [248, 235, 238] },
+  fair_warm: { rgb: [252, 235, 218] },
+  light_cool: { rgb: [238, 214, 215] },
+  light_warm: { rgb: [240, 218, 197] },
+  medium_cool: { rgb: [205, 155, 148] },
+  medium_warm: { rgb: [215, 179, 154] },
+  tan_cool: { rgb: [165, 114, 107] },
+  tan_warm: { rgb: [181, 137, 110] },
+  deep_cool: { rgb: [102, 63, 60] },
+  deep_warm: { rgb: [115, 75, 59] },
+  rich_cool: { rgb: [56, 32, 33] },
+  rich_warm: { rgb: [69, 41, 31] },
+}
+
+const computeSoftPalette = (userRgb) => {
+  const userLab = rgbToLab(...userRgb)
+  const distances = Object.entries(paletteMap).map(([key, palette]) => {
+    const anchorRgb = anchorTones[key]?.rgb || [0, 0, 0]
+    const anchorLab = rgbToLab(...anchorRgb)
+    const dl = userLab[0] - anchorLab[0]
+    const da = userLab[1] - anchorLab[1]
+    const db = userLab[2] - anchorLab[2]
+    const dist = Math.sqrt(dl * dl + da * da + db * db)
+    return { key, dist, palette }
+  })
+  
+  distances.sort((a, b) => a.dist - b.dist)
+  const topK = distances.slice(0, 3)
+  
+  if (topK[0].dist < 1) {
+    return topK[0].palette
+  }
+  
+  const power = 2
+  let totalInvDist = 0
+  topK.forEach((item) => {
+    item.invDist = 1 / Math.pow(item.dist, power)
+    totalInvDist += item.invDist
+  })
+  
+  topK.forEach((item) => {
+    item.weight = item.invDist / totalInvDist
+  })
+  
+  const blendColors = (itemsArrayFunc) => {
+    const length = itemsArrayFunc(topK[0].palette).length
+    const blended = []
+    for (let i = 0; i < length; i++) {
+      let lSum = 0, aSum = 0, bSum = 0
+      topK.forEach((item) => {
+        const colorHex = itemsArrayFunc(item.palette)[i].hex
+        const [r, g, bColor] = hexToRgb(colorHex)
+        const [l, a, bVal] = rgbToLab(r, g, bColor)
+        lSum += l * item.weight
+        aSum += a * item.weight
+        bSum += bVal * item.weight
+      })
+      const [r, g, bColor] = labToRgb(lSum, aSum, bSum)
+      const primaryName = itemsArrayFunc(topK[0].palette)[i].name
+      blended.push({
+        hex: rgbToHex(r, g, bColor),
+        name: primaryName
+      })
+    }
+    return blended
+  }
+  
+  return {
+    staples: blendColors((p) => p.staples),
+    accents: blendColors((p) => p.accents),
+    avoid: blendColors((p) => p.avoid)
+  }
+}
+
 const hslToDepth = (lightness) => {
   if (lightness > 0.78) return "fair"
   if (lightness >= 0.65) return "light"
@@ -592,7 +743,7 @@ const buildAnalysisSummary = (depth, undertone) => {
     warm: "warm",
     cool: "cool",
   }
-  return `Your skin reads as ${depthCopy[depth] || depth} with a ${undertoneCopy[undertone] || undertone} undertone. The palette below is built to keep the face visually balanced while giving you both reliable neutrals and stronger accent options.`
+  return `Your dominant tone reads as ${depthCopy[depth] || depth} with a ${undertoneCopy[undertone] || undertone} undertone. We have generated a custom blended color palette that perfectly interpolates between styling anchors to match your unique skin tone mathematically.`
 }
 
 const createPaletteDownloadCanvas = (result, toneHex, summary) => {
@@ -909,7 +1060,7 @@ export default function PaletteIQ() {
         const depth = hslToDepth(toneHsl.l)
         const undertone = hslToUndertone(toneHsl.h, toneHsl.s)
         const paletteKey = getPaletteKey(depth, undertone)
-        const palette = paletteMap[paletteKey] || paletteMap.medium_warm
+        const softPalette = computeSoftPalette(toneRgb)
         const summary = buildAnalysisSummary(depth, undertone)
 
         setResult({
@@ -920,7 +1071,7 @@ export default function PaletteIQ() {
           depth,
           undertone,
           paletteKey,
-          palette,
+          palette: softPalette,
           summary,
         })
         setMode("results")
